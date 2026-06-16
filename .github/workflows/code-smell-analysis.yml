@@ -1,0 +1,59 @@
+name: AI Code Smell Analysis
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  models: read
+
+jobs:
+  ai-code-smell-analysis:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build source file
+        run: |
+          find src -name "*.py" -type f -exec cat {} \; > source.txt
+
+      - name: Analyze code with AI
+        id: ai
+        uses: actions/ai-inference@v2.1.1
+        with:
+          prompt-file: .github/prompts/code-smells.prompt.yml
+          file_input: |
+            code: source.txt
+
+      - name: Save AI response
+        env:
+          AI_RESPONSE: ${{ steps.ai.outputs.response }}
+        run: |
+          printf '%s\n' "$AI_RESPONSE" \
+            | sed 's/^```json//' \
+            | sed 's/^```//' \
+            | sed 's/```$//' \
+            > result.json
+
+      - name: Show AI response
+        run: |
+          cat result.json
+
+      - name: Validate JSON
+        run: |
+          jq . result.json
+
+      - name: Fail if code smells are found
+        run: |
+          HAS_SMELLS=$(jq -r '.has_code_smells // false' result.json)
+
+          if [ "$HAS_SMELLS" = "true" ]; then
+            echo "Code smells detected"
+            exit 1
+          fi
+
+          echo "No code smells detected"
